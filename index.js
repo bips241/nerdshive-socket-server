@@ -11,6 +11,11 @@ app.use(cors({
     methods: ["GET", "POST"]
 }));
 
+app.get('/', (req, res) => {
+    res.send('Socket server is running');
+  });
+  
+
 const server = http.createServer(app);
 const io = new Server(server, {
   path: '/socket.io',
