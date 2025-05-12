@@ -13,6 +13,7 @@ app.use(cors({
 
 const server = http.createServer(app);
 const io = new Server(server, {
+  path: '/socket.io',
   cors: {
     origin: allowedOrigins,
     methods: ['GET', 'POST'],
