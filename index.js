@@ -3,11 +3,18 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
+const allowedOrigins = ["https://nerdshive.online", "http://localhost:3000"];
+
 const app = express();
+app.use(cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST"]
+}));
+
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*', // allow all for now, restrict to Vercel frontend domain in production
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
   },
 });
