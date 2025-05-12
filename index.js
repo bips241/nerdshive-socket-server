@@ -7,8 +7,12 @@ const allowedOrigins = ["https://nerdshive.online", "http://localhost:3000"];
 
 const app = express();
 app.use(cors({
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+    optionsSuccessStatus: 200,
 }));
 
 app.get('/', (req, res) => {
