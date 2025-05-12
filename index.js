@@ -3,26 +3,31 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
-const allowedOrigins = [
-    "https://nerdshive.online",
-    "https://nerdshive.vercel.app",
-    "http://localhost:3000"
-  ];
-  
-  const io = new Server(server, {
-    path: '/socket.io',
-    cors: {
-      origin: function (origin, callback) {
-        if (!origin || allowedOrigins.includes(origin)) {
-          callback(null, true);
-        } else {
-          callback(new Error("Not allowed by CORS"));
-        }
-      },
-      methods: ["GET", "POST"],
-      credentials: true
-    }
+const allowedOrigins = ["https://nerdshive.online", "http://localhost:3000"];
+
+const app = express();
+app.use(cors({
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+    optionsSuccessStatus: 200,
+}));
+
+app.get('/', (req, res) => {
+    res.send('Socket server is running');
   });
+  
+
+const server = http.createServer(app);
+const io = new Server(server, {
+  path: '/socket.io',
+  cors: {
+    origin: allowedOrigins,
+    methods: ['GET', 'POST'],
+  },
+});
 
 const intentQueues = {
   hiring: [],
