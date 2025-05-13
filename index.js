@@ -3,11 +3,11 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
-const allowedOrigins = ["https://nerdshive.online", "http://localhost:3000"];
+const allowedOrigins = ["https://nerdshive.online", "http://localhost:3000",];
 
 const app = express();
 app.use(cors({
-    origin: allowedOrigins,
+    origin: '*',
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
     exposedHeaders: ["Content-Type", "Authorization"],
