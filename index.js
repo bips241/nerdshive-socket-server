@@ -6,27 +6,36 @@ const cors = require('cors');
 const allowedOrigins = ["https://nerdshive.online", "http://localhost:3000"];
 
 const app = express();
-
 app.use(cors({
-  origin: allowedOrigins,
-  methods: ["GET", "POST"],
-  credentials: true,
+    origin: allowedOrigins,
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    exposedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
+    optionsSuccessStatus: 200,
 }));
-
-app.options('*', cors()); // For preflight
-
+app.use((req, res, next) => {
+    res.header("Access-Control-Allow-Origin", req.headers.origin);
+    res.header("Access-Control-Allow-Credentials", "true");
+    res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+  
 app.get('/', (req, res) => {
-  res.send('Socket server is running');
-});
+    res.send('Socket server is running');
+  });
+  
 
 const server = http.createServer(app);
-
 const io = new Server(server, {
   path: '/socket.io',
   cors: {
     origin: allowedOrigins,
     methods: ['GET', 'POST'],
-    credentials: true,
   },
 });
 
@@ -54,30 +63,31 @@ io.on('connection', (socket) => {
   });
 
   socket.on('skip', () => {
-    removeFromAllQueues(socket.id);
-    leaveAllRooms(socket);
+    for (const key in intentQueues) {
+      intentQueues[key] = intentQueues[key].filter((id) => id !== socket.id);
+    }
+
+    const rooms = Array.from(socket.rooms);
+    rooms.forEach((roomId) => {
+      if (roomId !== socket.id) {
+        io.to(roomId).emit('left');
+        socket.leave(roomId);
+      }
+    });
   });
 
   socket.on('disconnect', () => {
-    removeFromAllQueues(socket.id);
-    leaveAllRooms(socket);
-  });
-
-  function removeFromAllQueues(id) {
     for (const key in intentQueues) {
-      intentQueues[key] = intentQueues[key].filter((userId) => userId !== id);
+      intentQueues[key] = intentQueues[key].filter((id) => id !== socket.id);
     }
-  }
 
-  function leaveAllRooms(sock) {
-    const rooms = Array.from(sock.rooms);
-    rooms.forEach((roomId) => {
-      if (roomId !== sock.id) {
-        io.to(roomId).emit('left');
-        sock.leave(roomId);
+    for (const roomId of Array.from(socket.rooms)) {
+      if (roomId !== socket.id) {
+        socket.to(roomId).emit('left');
+        socket.leave(roomId);
       }
-    });
-  }
+    }
+  });
 });
 
 const PORT = process.env.PORT || 10000;
