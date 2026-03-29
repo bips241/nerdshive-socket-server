@@ -91,9 +91,14 @@ function roomFor(a, b) {
   return [a, b].sort().join(':');
 }
 
-function removeFromQueues(socketId) {
+function removeFromQueues(socketId, reason = 'unknown') {
   Object.keys(intentQueues).forEach((intent) => {
+    const before = intentQueues[intent].length;
     intentQueues[intent] = intentQueues[intent].filter((entry) => entry.socketId !== socketId);
+    const after = intentQueues[intent].length;
+    if (before !== after) {
+      console.log(`[DEQUEUE:${instanceId}] intent=${intent} socket=${socketId} reason=${reason} before=${before} after=${after}`);
+    }
   });
 }
 
@@ -125,7 +130,7 @@ function popValidPartner(intent, currentSocketId) {
 }
 
 io.on('connection', (socket) => {
-  console.log(`[CONNECT:${instanceId}]`, socket.id);
+  console.log(`[CONNECT:${instanceId}] socket=${socket.id} hiring_queue_size=${intentQueues.hiring.length}`);
 
   socket.on('join_queue', ({ intent, peerId }) => {
     const queue = intentQueues[intent];
@@ -147,7 +152,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    removeFromQueues(socket.id);
+    removeFromQueues(socket.id, 'join_queue');
     queuedState.delete(socket.id);
     leaveMatch(socket);
 
@@ -171,23 +176,24 @@ io.on('connection', (socket) => {
     } else {
       queue.push({ socketId: socket.id, peerId });
       queuedState.set(socket.id, { intent, peerId });
-      console.log(`[QUEUE:${instanceId}] intent=${intent} socket=${socket.id} size=${queue.length}`);
+      console.log(`[QUEUE:${instanceId}] intent=${intent} socket=${socket.id} size=${queue.length} queueMembers=${queue.map((q) => q.socketId).join(',')}`);
       socket.emit('queued', { intent });
     }
   });
 
   socket.on('skip', () => {
     console.log(`[SKIP:${instanceId}] socket=${socket.id}`);
-    removeFromQueues(socket.id);
+    removeFromQueues(socket.id, 'skip');
     queuedState.delete(socket.id);
     leaveMatch(socket);
   });
 
   socket.on('disconnect', () => {
-    console.log(`[DISCONNECT:${instanceId}] socket=${socket.id}`);
-    removeFromQueues(socket.id);
+    console.log(`[DISCONNECT:${instanceId}] socket=${socket.id} hiring_queue_size_before=${intentQueues.hiring.length}`);
+    removeFromQueues(socket.id, 'disconnect');
     queuedState.delete(socket.id);
     leaveMatch(socket);
+    console.log(`[DISCONNECT:${instanceId}] socket=${socket.id} hiring_queue_size_after=${intentQueues.hiring.length}`);
   });
 });
 
