@@ -93,9 +93,14 @@ function roomFor(a, b) {
 
 function removeFromQueues(socketId, reason = 'unknown') {
   Object.keys(intentQueues).forEach((intent) => {
-    const before = intentQueues[intent].length;
-    intentQueues[intent] = intentQueues[intent].filter((entry) => entry.socketId !== socketId);
-    const after = intentQueues[intent].length;
+    const queue = intentQueues[intent];
+    const before = queue.length;
+    for (let i = queue.length - 1; i >= 0; i -= 1) {
+      if (queue[i]?.socketId === socketId) {
+        queue.splice(i, 1);
+      }
+    }
+    const after = queue.length;
     if (before !== after) {
       console.log(`[DEQUEUE:${instanceId}] intent=${intent} socket=${socketId} reason=${reason} before=${before} after=${after}`);
     }
