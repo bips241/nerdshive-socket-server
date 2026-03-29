@@ -85,6 +85,7 @@ const intentQueues = {
 };
 
 const activeMatches = new Map();
+const queuedState = new Map();
 
 function roomFor(a, b) {
   return [a, b].sort().join(':');
@@ -133,7 +134,18 @@ io.on('connection', (socket) => {
       return;
     }
 
+    const currentQueued = queuedState.get(socket.id);
+    if (
+      currentQueued &&
+      currentQueued.intent === intent &&
+      currentQueued.peerId === peerId
+    ) {
+      socket.emit('queued', { intent });
+      return;
+    }
+
     removeFromQueues(socket.id);
+    queuedState.delete(socket.id);
     leaveMatch(socket);
 
     const partner = popValidPartner(intent, socket.id);
@@ -146,11 +158,14 @@ io.on('connection', (socket) => {
 
       activeMatches.set(socket.id, partner.socketId);
       activeMatches.set(partner.socketId, socket.id);
+      queuedState.delete(socket.id);
+      queuedState.delete(partner.socketId);
 
       socket.emit('match_found', { peerId: partner.peerId, roomId, isInitiator: true });
       io.to(partner.socketId).emit('match_found', { peerId, roomId, isInitiator: false });
     } else {
       queue.push({ socketId: socket.id, peerId });
+      queuedState.set(socket.id, { intent, peerId });
       console.log(`[QUEUE:${instanceId}] intent=${intent} socket=${socket.id} size=${queue.length}`);
       socket.emit('queued', { intent });
     }
@@ -159,12 +174,14 @@ io.on('connection', (socket) => {
   socket.on('skip', () => {
     console.log(`[SKIP:${instanceId}] socket=${socket.id}`);
     removeFromQueues(socket.id);
+    queuedState.delete(socket.id);
     leaveMatch(socket);
   });
 
   socket.on('disconnect', () => {
     console.log(`[DISCONNECT:${instanceId}] socket=${socket.id}`);
     removeFromQueues(socket.id);
+    queuedState.delete(socket.id);
     leaveMatch(socket);
   });
 });
