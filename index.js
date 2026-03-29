@@ -119,6 +119,7 @@ io.on('connection', (socket) => {
 
     const partner = popValidPartner(intent, socket.id);
     if (partner) {
+      console.log(`[MATCH] intent=${intent} ${socket.id} <-> ${partner.socketId}`);
       const partnerSocket = io.sockets.sockets.get(partner.socketId);
       if (!partnerSocket) {
         queue.push({ socketId: socket.id, peerId });
@@ -137,16 +138,19 @@ io.on('connection', (socket) => {
       partnerSocket.emit('match_found', { peerId, roomId, isInitiator: false });
     } else {
       queue.push({ socketId: socket.id, peerId });
+      console.log(`[QUEUE] intent=${intent} socket=${socket.id} size=${queue.length}`);
       socket.emit('queued', { intent });
     }
   });
 
   socket.on('skip', () => {
+    console.log(`[SKIP] socket=${socket.id}`);
     removeFromQueues(socket.id);
     leaveMatch(socket);
   });
 
   socket.on('disconnect', () => {
+    console.log(`[DISCONNECT] socket=${socket.id}`);
     removeFromQueues(socket.id);
     leaveMatch(socket);
   });
