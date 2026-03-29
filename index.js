@@ -105,12 +105,7 @@ function leaveMatch(socket) {
 
   const roomId = roomFor(socket.id, partnerSocketId);
   socket.leave(roomId);
-
-  const partnerSocket = io.sockets.sockets.get(partnerSocketId);
-  if (partnerSocket) {
-    partnerSocket.leave(roomId);
-    partnerSocket.emit('left');
-  }
+  io.to(partnerSocketId).emit('left');
 }
 
 function popValidPartner(intent, currentSocketId) {
@@ -121,7 +116,6 @@ function popValidPartner(intent, currentSocketId) {
     const candidate = queue.shift();
     if (!candidate) break;
     if (candidate.socketId === currentSocketId) continue;
-    if (!io.sockets.sockets.get(candidate.socketId)) continue;
     if (!candidate.peerId) continue;
     return candidate;
   }
@@ -145,22 +139,16 @@ io.on('connection', (socket) => {
     const partner = popValidPartner(intent, socket.id);
     if (partner) {
       console.log(`[MATCH:${instanceId}] intent=${intent} ${socket.id} <-> ${partner.socketId}`);
-      const partnerSocket = io.sockets.sockets.get(partner.socketId);
-      if (!partnerSocket) {
-        queue.push({ socketId: socket.id, peerId });
-        socket.emit('queued', { intent });
-        return;
-      }
 
       const roomId = roomFor(socket.id, partner.socketId);
       socket.join(roomId);
-      partnerSocket.join(roomId);
+      io.in(partner.socketId).socketsJoin(roomId);
 
       activeMatches.set(socket.id, partner.socketId);
       activeMatches.set(partner.socketId, socket.id);
 
       socket.emit('match_found', { peerId: partner.peerId, roomId, isInitiator: true });
-      partnerSocket.emit('match_found', { peerId, roomId, isInitiator: false });
+      io.to(partner.socketId).emit('match_found', { peerId, roomId, isInitiator: false });
     } else {
       queue.push({ socketId: socket.id, peerId });
       console.log(`[QUEUE:${instanceId}] intent=${intent} socket=${socket.id} size=${queue.length}`);
