@@ -6,7 +6,7 @@ const cors = require('cors');
 const allowedOrigins = (
   process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
-    : ["https://nerdshive.online", "http://localhost:3000"]
+    : ["https://nerdshive.online", "http://localhost:3000", "https://nerdshive.vercel.app" ]
 );
 
 const app = express();
