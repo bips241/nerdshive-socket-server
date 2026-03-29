@@ -3,6 +3,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
+const instanceId = process.env.INSTANCE_ID || `pid-${process.pid}`;
+
 const allowedOrigins = (
   process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
@@ -52,6 +54,29 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+
+if (process.env.REDIS_URL) {
+  try {
+    const { createAdapter } = require('@socket.io/redis-adapter');
+    const Redis = require('ioredis');
+    const shouldUseTls =
+      process.env.REDIS_TLS === 'true' ||
+      process.env.REDIS_URL.startsWith('rediss://') ||
+      process.env.REDIS_URL.includes('upstash.io');
+
+    const redisOptions = {
+      maxRetriesPerRequest: null,
+      ...(shouldUseTls ? { tls: {} } : {}),
+    };
+
+    const pubClient = new Redis(process.env.REDIS_URL, redisOptions);
+    const subClient = pubClient.duplicate();
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log(`[BOOT:${instanceId}] Redis adapter enabled (tls=${shouldUseTls})`);
+  } catch (error) {
+    console.error(`[BOOT:${instanceId}] Failed to enable Redis adapter`, error);
+  }
+}
 
 const intentQueues = {
   hiring: [],
@@ -105,7 +130,7 @@ function popValidPartner(intent, currentSocketId) {
 }
 
 io.on('connection', (socket) => {
-  console.log('Client connected:', socket.id);
+  console.log(`[CONNECT:${instanceId}]`, socket.id);
 
   socket.on('join_queue', ({ intent, peerId }) => {
     const queue = intentQueues[intent];
@@ -119,7 +144,7 @@ io.on('connection', (socket) => {
 
     const partner = popValidPartner(intent, socket.id);
     if (partner) {
-      console.log(`[MATCH] intent=${intent} ${socket.id} <-> ${partner.socketId}`);
+      console.log(`[MATCH:${instanceId}] intent=${intent} ${socket.id} <-> ${partner.socketId}`);
       const partnerSocket = io.sockets.sockets.get(partner.socketId);
       if (!partnerSocket) {
         queue.push({ socketId: socket.id, peerId });
@@ -138,19 +163,19 @@ io.on('connection', (socket) => {
       partnerSocket.emit('match_found', { peerId, roomId, isInitiator: false });
     } else {
       queue.push({ socketId: socket.id, peerId });
-      console.log(`[QUEUE] intent=${intent} socket=${socket.id} size=${queue.length}`);
+      console.log(`[QUEUE:${instanceId}] intent=${intent} socket=${socket.id} size=${queue.length}`);
       socket.emit('queued', { intent });
     }
   });
 
   socket.on('skip', () => {
-    console.log(`[SKIP] socket=${socket.id}`);
+    console.log(`[SKIP:${instanceId}] socket=${socket.id}`);
     removeFromQueues(socket.id);
     leaveMatch(socket);
   });
 
   socket.on('disconnect', () => {
-    console.log(`[DISCONNECT] socket=${socket.id}`);
+    console.log(`[DISCONNECT:${instanceId}] socket=${socket.id}`);
     removeFromQueues(socket.id);
     leaveMatch(socket);
   });
