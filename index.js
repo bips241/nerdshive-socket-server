@@ -134,12 +134,15 @@ io.on('connection', (socket) => {
       return;
     }
 
+    console.log(`[JOIN_QUEUE:${instanceId}] intent=${intent} socket=${socket.id} peerId=${peerId} queueSize=${queue.length}`);
+
     const currentQueued = queuedState.get(socket.id);
     if (
       currentQueued &&
       currentQueued.intent === intent &&
       currentQueued.peerId === peerId
     ) {
+      console.log(`[DEDUP:${instanceId}] socket=${socket.id} already queued, returning early`);
       socket.emit('queued', { intent });
       return;
     }
@@ -149,6 +152,8 @@ io.on('connection', (socket) => {
     leaveMatch(socket);
 
     const partner = popValidPartner(intent, socket.id);
+    console.log(`[POP_PARTNER:${instanceId}] intent=${intent} socket=${socket.id} found=${partner ? partner.socketId : 'null'}`);
+    
     if (partner) {
       console.log(`[MATCH:${instanceId}] intent=${intent} ${socket.id} <-> ${partner.socketId}`);
 
