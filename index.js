@@ -3,11 +3,21 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 
-const allowedOrigins = ["https://nerdshive.online", "http://localhost:3000",];
+const allowedOrigins = (
+  process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : ["https://nerdshive.online", "http://localhost:3000"]
+);
 
 const app = express();
 app.use(cors({
-    origin: '*',
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error('Not allowed by CORS'));
+    },
     methods: ["GET", "POST", "PUT", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
     exposedHeaders: ["Content-Type", "Authorization"],
@@ -15,7 +25,10 @@ app.use(cors({
     optionsSuccessStatus: 200,
 }));
 app.use((req, res, next) => {
-    res.header("Access-Control-Allow-Origin", req.headers.origin);
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.includes(origin)) {
+      res.header("Access-Control-Allow-Origin", origin);
+    }
     res.header("Access-Control-Allow-Credentials", "true");
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
@@ -36,6 +49,7 @@ const io = new Server(server, {
   cors: {
     origin: allowedOrigins,
     methods: ['GET', 'POST'],
+    credentials: true,
   },
 });
 
@@ -45,48 +59,96 @@ const intentQueues = {
   project_teammate: [],
 };
 
+const activeMatches = new Map();
+
+function roomFor(a, b) {
+  return [a, b].sort().join(':');
+}
+
+function removeFromQueues(socketId) {
+  Object.keys(intentQueues).forEach((intent) => {
+    intentQueues[intent] = intentQueues[intent].filter((entry) => entry.socketId !== socketId);
+  });
+}
+
+function leaveMatch(socket) {
+  const partnerSocketId = activeMatches.get(socket.id);
+  if (!partnerSocketId) return;
+
+  activeMatches.delete(socket.id);
+  activeMatches.delete(partnerSocketId);
+
+  const roomId = roomFor(socket.id, partnerSocketId);
+  socket.leave(roomId);
+
+  const partnerSocket = io.sockets.sockets.get(partnerSocketId);
+  if (partnerSocket) {
+    partnerSocket.leave(roomId);
+    partnerSocket.emit('left');
+  }
+}
+
+function popValidPartner(intent, currentSocketId) {
+  const queue = intentQueues[intent];
+  if (!queue) return null;
+
+  while (queue.length > 0) {
+    const candidate = queue.shift();
+    if (!candidate) break;
+    if (candidate.socketId === currentSocketId) continue;
+    if (!io.sockets.sockets.get(candidate.socketId)) continue;
+    if (!candidate.peerId) continue;
+    return candidate;
+  }
+
+  return null;
+}
+
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
 
-  socket.on('join_queue', ({ intent }) => {
+  socket.on('join_queue', ({ intent, peerId }) => {
     const queue = intentQueues[intent];
-    if (!queue) return;
+    if (!queue || !peerId) {
+      socket.emit('queue_error', { message: 'Invalid queue payload' });
+      return;
+    }
 
-    const partnerId = queue.shift();
-    if (partnerId) {
-      socket.join(partnerId);
-      socket.emit('match_found', { peerId: partnerId });
-      io.to(partnerId).emit('match_found', { peerId: socket.id });
+    removeFromQueues(socket.id);
+    leaveMatch(socket);
+
+    const partner = popValidPartner(intent, socket.id);
+    if (partner) {
+      const partnerSocket = io.sockets.sockets.get(partner.socketId);
+      if (!partnerSocket) {
+        queue.push({ socketId: socket.id, peerId });
+        socket.emit('queued', { intent });
+        return;
+      }
+
+      const roomId = roomFor(socket.id, partner.socketId);
+      socket.join(roomId);
+      partnerSocket.join(roomId);
+
+      activeMatches.set(socket.id, partner.socketId);
+      activeMatches.set(partner.socketId, socket.id);
+
+      socket.emit('match_found', { peerId: partner.peerId, roomId, isInitiator: true });
+      partnerSocket.emit('match_found', { peerId, roomId, isInitiator: false });
     } else {
-      queue.push(socket.id);
+      queue.push({ socketId: socket.id, peerId });
+      socket.emit('queued', { intent });
     }
   });
 
   socket.on('skip', () => {
-    for (const key in intentQueues) {
-      intentQueues[key] = intentQueues[key].filter((id) => id !== socket.id);
-    }
-
-    const rooms = Array.from(socket.rooms);
-    rooms.forEach((roomId) => {
-      if (roomId !== socket.id) {
-        io.to(roomId).emit('left');
-        socket.leave(roomId);
-      }
-    });
+    removeFromQueues(socket.id);
+    leaveMatch(socket);
   });
 
   socket.on('disconnect', () => {
-    for (const key in intentQueues) {
-      intentQueues[key] = intentQueues[key].filter((id) => id !== socket.id);
-    }
-
-    for (const roomId of Array.from(socket.rooms)) {
-      if (roomId !== socket.id) {
-        socket.to(roomId).emit('left');
-        socket.leave(roomId);
-      }
-    }
+    removeFromQueues(socket.id);
+    leaveMatch(socket);
   });
 });
 
